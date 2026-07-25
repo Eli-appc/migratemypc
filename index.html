@@ -121,6 +121,129 @@
     }
 
     .programs-table tbody tr:hover { background: #2a2a3e; cursor: pointer; }
+    .programs-table tbody tr.selected { background: #1a2a4e; }
+
+    /* פאנל צד */
+    .main-area {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .content {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .side-panel {
+      width: 0;
+      background: #2a2a3e;
+      border-right: 2px solid #3a3a5e;
+      overflow: hidden;
+      transition: width 0.3s ease;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    html[dir="ltr"] .side-panel {
+      border-right: none;
+      border-left: 2px solid #3a3a5e;
+    }
+
+    .side-panel.open { width: 340px; }
+
+    .side-panel-inner {
+      padding: 20px;
+      width: 340px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .side-panel h3 {
+      color: #7c9ef8;
+      font-size: 15px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #3a3a5e;
+      padding-bottom: 10px;
+    }
+
+    .side-field {
+      margin-bottom: 16px;
+    }
+
+    .side-field label {
+      display: block;
+      color: #aaaacc;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .side-field input, .side-field select, .side-field textarea {
+      width: 100%;
+      background: #1e1e2e;
+      border: 1px solid #3a3a5e;
+      color: #ffffff;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .side-field textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+
+    .side-field input:focus, .side-field select:focus {
+      outline: none;
+      border-color: #7c9ef8;
+    }
+
+    .side-actions {
+      padding: 16px 20px;
+      border-top: 1px solid #3a3a5e;
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-save {
+      background: #7c9ef8;
+      color: #1e1e2e;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      flex: 1;
+    }
+
+    .btn-save:hover { background: #5b7de8; }
+
+    .btn-close-panel {
+      background: #3a3a5e;
+      color: #aaaacc;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .btn-close-panel:hover { background: #4a4a6e; color: #fff; }
+
+    .status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .status-ready { background: #1a4a2e; color: #4caf82; }
+    .status-partial { background: #4a3a1a; color: #f0a830; }
+    .status-pending { background: #3a3a5e; color: #aaaacc; }
   </style>
 </head>
 <body>
@@ -134,6 +257,7 @@
     <button class="lang-btn" id="lang-toggle" onclick="toggleLang()">EN</button>
   </div>
 
+  <div class="main-area">
   <div class="content">
     <div id="tab-programs" class="tab-panel active">
       <div class="card">
@@ -167,6 +291,73 @@
         <p id="coming-soon"></p>
       </div>
     </div>
+
+  </div>
+
+  <!-- פאנל צד -->
+  <div class="side-panel" id="side-panel">
+    <div class="side-panel-inner">
+      <h3 id="panel-title">פרטי תוכנה</h3>
+
+      <div class="side-field">
+        <label id="panel-label-name">שם התוכנה</label>
+        <input type="text" id="panel-name" readonly style="opacity:0.6">
+      </div>
+
+      <div class="side-field">
+        <label id="panel-label-version">גרסה</label>
+        <input type="text" id="panel-version" readonly style="opacity:0.6">
+      </div>
+
+      <div class="side-field">
+        <label id="panel-label-publisher">יצרן</label>
+        <input type="text" id="panel-publisher" readonly style="opacity:0.6">
+      </div>
+
+      <div class="side-field">
+        <label id="panel-label-license">סוג רישיון</label>
+        <select id="panel-license-type" onchange="onLicenseTypeChange()">
+          <option value="none" id="opt-none">ללא / חינמי</option>
+          <option value="serial" id="opt-serial">סריאל / מפתח מוצר</option>
+          <option value="account" id="opt-account">שם משתמש וסיסמה</option>
+          <option value="subscription" id="opt-subscription">מנוי (כניסה לחשבון)</option>
+        </select>
+      </div>
+
+      <div class="side-field" id="field-serial" style="display:none">
+        <label id="panel-label-serial">סריאל / מפתח מוצר</label>
+        <input type="text" id="panel-serial" placeholder="XXXXX-XXXXX-XXXXX">
+      </div>
+
+      <div class="side-field" id="field-username" style="display:none">
+        <label id="panel-label-username">שם משתמש</label>
+        <input type="text" id="panel-username">
+      </div>
+
+      <div class="side-field" id="field-password" style="display:none">
+        <label id="panel-label-password">סיסמה</label>
+        <input type="password" id="panel-password">
+      </div>
+
+      <div class="side-field">
+        <label id="panel-label-installer">קובץ התקנה</label>
+        <input type="text" id="panel-installer" placeholder="C:\Downloads\setup.exe" readonly>
+        <button class="btn-primary" style="margin-top:8px; padding:8px 16px; font-size:13px; width:100%" 
+          id="panel-installer-btn" onclick="browseInstaller()">📂 בחר קובץ</button>
+      </div>
+
+      <div class="side-field">
+        <label id="panel-label-notes">הערות</label>
+        <textarea id="panel-notes" placeholder="הערות חופשיות..."></textarea>
+      </div>
+    </div>
+
+    <div class="side-actions">
+      <button class="btn-save" id="panel-save-btn" onclick="savePanel()">💾 שמור</button>
+      <button class="btn-close-panel" onclick="closePanel()">✕</button>
+    </div>
+  </div>
+
   </div>
 
   <script src="i18n.js"></script>
@@ -264,6 +455,142 @@
           </div>
         `
       }
+    }
+
+    // נתוני תוכנות שמורים
+    let programsData = {}
+    let selectedProgramId = null
+
+    // טעינת נתונים שמורים בהפעלה
+    async function initData() {
+      const saved = await window.electronAPI.loadData()
+      if (saved) programsData = saved
+    }
+
+    initData()
+
+    function openPanel(program) {
+      selectedProgramId = program.id
+      const saved = programsData[program.id] || {}
+
+      document.getElementById('panel-name').value = program.name
+      document.getElementById('panel-version').value = program.version || '-'
+      document.getElementById('panel-publisher').value = program.publisher || '-'
+      document.getElementById('panel-license-type').value = saved.licenseType || 'none'
+      document.getElementById('panel-serial').value = saved.serial || ''
+      document.getElementById('panel-username').value = saved.username || ''
+      document.getElementById('panel-password').value = saved.password || ''
+      document.getElementById('panel-installer').value = saved.installer || ''
+      document.getElementById('panel-notes').value = saved.notes || ''
+
+      onLicenseTypeChange()
+      document.getElementById('side-panel').classList.add('open')
+
+      // סימון השורה הנבחרת
+      document.querySelectorAll('.programs-table tbody tr').forEach(r => r.classList.remove('selected'))
+      const rows = document.querySelectorAll('.programs-table tbody tr')
+      rows.forEach(row => {
+        if (row.dataset.id === program.id) row.classList.add('selected')
+      })
+    }
+
+    function closePanel() {
+      document.getElementById('side-panel').classList.remove('open')
+      selectedProgramId = null
+      document.querySelectorAll('.programs-table tbody tr').forEach(r => r.classList.remove('selected'))
+    }
+
+    function onLicenseTypeChange() {
+      const type = document.getElementById('panel-license-type').value
+      document.getElementById('field-serial').style.display = type === 'serial' ? 'block' : 'none'
+      document.getElementById('field-username').style.display = (type === 'account' || type === 'subscription') ? 'block' : 'none'
+      document.getElementById('field-password').style.display = (type === 'account' || type === 'subscription') ? 'block' : 'none'
+    }
+
+    async function savePanel() {
+      if (!selectedProgramId) return
+
+      programsData[selectedProgramId] = {
+        licenseType: document.getElementById('panel-license-type').value,
+        serial: document.getElementById('panel-serial').value,
+        username: document.getElementById('panel-username').value,
+        password: document.getElementById('panel-password').value,
+        installer: document.getElementById('panel-installer').value,
+        notes: document.getElementById('panel-notes').value
+      }
+
+      // שמירה לדיסק
+      await window.electronAPI.saveData(programsData)
+
+      // עדכון סטטוס בטבלה
+      updateRowStatus(selectedProgramId)
+      closePanel()
+    }
+
+    function updateRowStatus(id) {
+      const saved = programsData[id] || {}
+      const rows = document.querySelectorAll('.programs-table tbody tr')
+      rows.forEach(row => {
+        if (row.dataset.id === id) {
+          const statusCell = row.querySelector('.status-cell')
+          if (statusCell) {
+            const hasInstaller = !!saved.installer
+            const hasLicense = saved.licenseType === 'none' || !!saved.serial || !!saved.username
+            if (hasInstaller && hasLicense) {
+              statusCell.innerHTML = '<span class="status-badge status-ready">✅ מוכן</span>'
+            } else if (hasInstaller || hasLicense) {
+              statusCell.innerHTML = '<span class="status-badge status-partial">⚠️ חלקי</span>'
+            } else {
+              statusCell.innerHTML = '<span class="status-badge status-pending">⚪ ממתין</span>'
+            }
+          }
+        }
+      })
+    }
+
+    async function browseInstaller() {
+      const filePath = await window.electronAPI.browseFile()
+      if (filePath) document.getElementById('panel-installer').value = filePath
+    }
+
+    function renderTable(programs) {
+      let html = `
+        <div class="card">
+          <h2>${window.i18n.t('foundPrograms', { count: programs.length })}</h2>
+        </div>
+        <table class="programs-table">
+          <thead>
+            <tr>
+              <th>${window.i18n.t('colName')}</th>
+              <th>${window.i18n.t('colVersion')}</th>
+              <th>${window.i18n.t('colPublisher')}</th>
+              <th>${window.i18n.t('colSize')}</th>
+              <th>${window.i18n.t('colStatus')}</th>
+            </tr>
+          </thead>
+          <tbody>
+      `
+      for (const p of programs) {
+        const saved = programsData[p.id] || {}
+        const hasInstaller = !!saved.installer
+        const hasLicense = saved.licenseType === 'none' || !!saved.serial || !!saved.username
+        let statusHtml = '<span class="status-badge status-pending">⚪ ממתין</span>'
+        if (hasInstaller && hasLicense) {
+          statusHtml = '<span class="status-badge status-ready">✅ מוכן</span>'
+        } else if (hasInstaller || hasLicense) {
+          statusHtml = '<span class="status-badge status-partial">⚠️ חלקי</span>'
+        }
+
+        html += `<tr data-id="${p.id}" onclick="openPanel(${JSON.stringify(p).replace(/"/g, '&quot;')})">
+          <td>${p.name}</td>
+          <td>${p.version || '-'}</td>
+          <td>${p.publisher || '-'}</td>
+          <td>${p.sizeDisplay}</td>
+          <td class="status-cell">${statusHtml}</td>
+        </tr>`
+      }
+      html += `</tbody></table>`
+      document.getElementById('programs-list').innerHTML = html
     }
 
     // אתחול ראשוני

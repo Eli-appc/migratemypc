@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const { scanInstalledPrograms } = require('./scanner')
+const { loadData, saveData } = require('./storage')
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -17,6 +18,28 @@ function createWindow() {
 // האזנה לבקשת סריקה מהממשק
 ipcMain.handle('scan-programs', async () => {
   return scanInstalledPrograms()
+})
+
+ipcMain.handle('load-data', async () => {
+  return loadData()
+})
+
+ipcMain.handle('save-data', async (event, data) => {
+  return saveData(data)
+})
+
+ipcMain.handle('browse-file', async (event) => {
+  const { dialog } = require('electron')
+  const result = await dialog.showOpenDialog({
+    title: 'בחר קובץ התקנה',
+    filters: [
+      { name: 'קבצי התקנה', extensions: ['exe', 'msi', 'msix', 'appx'] },
+      { name: 'כל הקבצים', extensions: ['*'] }
+    ],
+    properties: ['openFile']
+  })
+  if (result.canceled) return null
+  return result.filePaths[0]
 })
 
 app.whenReady().then(() => {
