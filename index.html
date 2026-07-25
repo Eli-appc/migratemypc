@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <title>MigrateMyPC</title>
@@ -118,7 +118,10 @@
       font-size: 13px;
       color: #ddddee;
       border-bottom: 1px solid #2a2a3e;
+      text-align: right;
     }
+
+    html[dir="ltr"] .programs-table td { text-align: left; }
 
     .programs-table tbody tr:hover { background: #2a2a3e; cursor: pointer; }
     .programs-table tbody tr.selected { background: #1a2a4e; }
@@ -296,6 +299,22 @@
     }
 
     .btn-remove:hover { background: #6a2a2a; }
+    /* Export */
+    .export-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid #3a3a5e;
+      font-size: 13px;
+    }
+    .export-item:last-child { border-bottom: none; }
+    .export-item .item-icon { font-size: 18px; flex-shrink: 0; }
+    .export-item .item-name { flex: 1; color: #ddddee; }
+    .export-item .item-status { color: #aaaacc; font-size: 12px; }
+    .export-item.success .item-status { color: #4caf82; }
+    .export-item.warning .item-status { color: #f0c040; }
+    .export-item.error .item-status { color: #ff6b6b; }
   </style>
 </head>
 <body>
@@ -304,9 +323,10 @@
     <span class="toolbar-title" id="app-title">MigrateMyPC 🖥️</span>
     <button class="tab-btn active" id="tab-btn-programs" onclick="switchTab('programs', this)"></button>
     <button class="tab-btn" id="tab-btn-folders" onclick="switchTab('folders', this)"></button>
-    <button class="tab-btn" onclick="switchTab('more', this)" title="בקרוב">+</button>
+    <button class="tab-btn" onclick="switchTab('export', this)">🚀 Export</button>
+    <button class="tab-btn" onclick="switchTab('more', this)" title="Coming soon">+</button>
     <div class="toolbar-spacer"></div>
-    <button class="lang-btn" id="lang-toggle" onclick="toggleLang()">EN</button>
+    
   </div>
 
   <div class="main-area">
@@ -329,7 +349,7 @@
       <div class="card">
         <h2 id="folders-title"></h2>
         <p id="folders-desc"></p>
-        <button class="btn-primary" id="folders-add-btn" onclick="addFolders()">📁 הוסף תיקייה</button>
+        <button class="btn-primary" id="folders-add-btn" onclick="addFolders()"></button>
       </div>
 
       <div id="folders-list">
@@ -344,6 +364,50 @@
       </div>
     </div>
 
+    <div id="tab-export" class="tab-panel">
+
+      <!-- שלב 1: בחירת כונן -->
+      <div class="card" id="export-step-1">
+        <h2>🚀 Export to USB Drive</h2>
+        <p style="color:#aaaacc; margin-bottom:16px">
+          This will export all your program settings, installer files, and custom folders to a USB drive.
+          On your new computer, run MigrateMyPC and select "Import" to restore everything.
+        </p>
+
+        <div id="export-usb-path" style="background:#1e1e2e; border-radius:8px; padding:12px 16px; margin-bottom:12px; font-size:13px; color:#aaaacc;">
+          No USB drive selected
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn-primary" onclick="selectExportFolder()">📁 Select USB Drive / Folder</button>
+          <button class="btn-primary" id="btn-start-export" onclick="startExport()" style="display:none; background:#2a6a3a;">▶️ Start Export</button>
+        </div>
+      </div>
+
+      <!-- סיכום מה יוצא -->
+      <div class="card" id="export-summary" style="display:none">
+        <h2>📋 Export Summary</h2>
+        <div id="export-summary-content"></div>
+      </div>
+
+      <!-- פס התקדמות -->
+      <div class="card" id="export-progress-card" style="display:none">
+        <h2>⏳ Exporting...</h2>
+        <div id="export-progress-text" style="color:#aaaacc; font-size:13px; margin-bottom:12px;"></div>
+        <div style="background:#1e1e2e; border-radius:8px; height:12px; overflow:hidden;">
+          <div id="export-progress-bar" style="background:#7c9ef8; height:100%; width:0%; transition:width 0.3s;"></div>
+        </div>
+        <div id="export-progress-percent" style="color:#7c9ef8; font-size:13px; margin-top:8px; text-align:center;">0%</div>
+      </div>
+
+      <!-- תוצאה -->
+      <div class="card" id="export-result" style="display:none">
+        <h2 id="export-result-title"></h2>
+        <div id="export-result-content"></div>
+      </div>
+
+    </div>
+
     <div id="tab-more" class="tab-panel">
       <div class="empty-state">
         <div class="icon">🚧</div>
@@ -356,63 +420,65 @@
   <!-- פאנל צד -->
   <div class="side-panel" id="side-panel">
     <div class="side-panel-inner">
-      <h3 id="panel-title">פרטי תוכנה</h3>
+      <h3 id="panel-title">Program Details</h3>
+      <div id="panel-hint" style="display:none; background:#1a3a2e; color:#4caf82; padding:10px 12px; border-radius:8px; font-size:12px; margin-bottom:12px; line-height:1.5;"></div>
+      <div id="panel-notes-detected" style="display:none; background:#2a2a1e; color:#f0c040; padding:10px 12px; border-radius:8px; font-size:12px; margin-bottom:12px; line-height:1.5;"></div>
+      <div id="panel-data-folders" style="display:none; background:#1a2a3e; color:#7c9ef8; padding:10px 12px; border-radius:8px; font-size:12px; margin-bottom:16px; line-height:1.8;"></div>
 
       <div class="side-field">
-        <label id="panel-label-name">שם התוכנה</label>
+        <label>Program Name</label>
         <input type="text" id="panel-name" readonly style="opacity:0.6">
       </div>
 
       <div class="side-field">
-        <label id="panel-label-version">גרסה</label>
+        <label>Version</label>
         <input type="text" id="panel-version" readonly style="opacity:0.6">
       </div>
 
       <div class="side-field">
-        <label id="panel-label-publisher">יצרן</label>
+        <label>Publisher</label>
         <input type="text" id="panel-publisher" readonly style="opacity:0.6">
       </div>
 
       <div class="side-field">
-        <label id="panel-label-license">סוג רישיון</label>
+        <label>License Type</label>
         <select id="panel-license-type" onchange="onLicenseTypeChange()">
-          <option value="none" id="opt-none">ללא / חינמי</option>
-          <option value="serial" id="opt-serial">סריאל / מפתח מוצר</option>
-          <option value="account" id="opt-account">שם משתמש וסיסמה</option>
-          <option value="subscription" id="opt-subscription">מנוי (כניסה לחשבון)</option>
+          <option value="none">None / Free</option>
+          <option value="serial">Serial / Product Key</option>
+          <option value="account">Username and Password</option>
+          <option value="subscription">Subscription (account login)</option>
         </select>
       </div>
 
       <div class="side-field" id="field-serial" style="display:none">
-        <label id="panel-label-serial">סריאל / מפתח מוצר</label>
+        <label>Serial / Product Key</label>
         <input type="text" id="panel-serial" placeholder="XXXXX-XXXXX-XXXXX">
       </div>
 
       <div class="side-field" id="field-username" style="display:none">
-        <label id="panel-label-username">שם משתמש</label>
+        <label>Username</label>
         <input type="text" id="panel-username">
       </div>
 
       <div class="side-field" id="field-password" style="display:none">
-        <label id="panel-label-password">סיסמה</label>
+        <label>Password</label>
         <input type="password" id="panel-password">
       </div>
 
       <div class="side-field">
-        <label id="panel-label-installer">קובץ התקנה</label>
+        <label>Installer File</label>
         <input type="text" id="panel-installer" placeholder="C:\Downloads\setup.exe" readonly>
         <button class="btn-primary" style="margin-top:8px; padding:8px 16px; font-size:13px; width:100%" 
-          id="panel-installer-btn" onclick="browseInstaller()">📂 בחר קובץ</button>
+          id="panel-installer-btn" onclick="browseInstaller()">📂 Choose File</button>
       </div>
 
       <div class="side-field">
-        <label id="panel-label-notes">הערות</label>
-        <textarea id="panel-notes" placeholder="הערות חופשיות..."></textarea>
+        <label>Notes</label>
+        <textarea id="panel-notes" placeholder="Free-form notes..."></textarea>
       </div>
-    </div>
 
     <div class="side-actions">
-      <button class="btn-save" id="panel-save-btn" onclick="savePanel()">💾 שמור</button>
+      <button class="btn-save" id="panel-save-btn" onclick="savePanel()">💾 Save</button>
       <button class="btn-close-panel" onclick="closePanel()">✕</button>
     </div>
   </div>
@@ -435,14 +501,36 @@
       document.getElementById('click-to-scan').textContent = window.i18n.t('clickToScan')
       document.getElementById('folders-title').textContent = window.i18n.t('foldersTitle')
       document.getElementById('folders-desc').textContent = window.i18n.t('foldersDesc')
-      document.getElementById('folders-btn').textContent = window.i18n.t('foldersBtn')
       document.getElementById('folders-add-btn').textContent = window.i18n.t('foldersAddBtn')
       document.getElementById('no-folders').textContent = window.i18n.t('noFolders')
       document.getElementById('coming-soon').textContent = window.i18n.t('comingSoon')
-      document.getElementById('lang-toggle').textContent = lang === 'he' ? 'EN' : 'עב'
+      document.getElementById('tab-btn-more').title = window.i18n.t('moreTooltip')
+      document.getElementById('lang-toggle').textContent = lang === 'he' ? 'EN' : 'HE'
+
+      document.getElementById('panel-title').textContent = window.i18n.t('panelTitle')
+      document.getElementById('panel-label-name').textContent = window.i18n.t('panelLabelName')
+      document.getElementById('panel-label-version').textContent = window.i18n.t('panelLabelVersion')
+      document.getElementById('panel-label-publisher').textContent = window.i18n.t('panelLabelPublisher')
+      document.getElementById('panel-label-license').textContent = window.i18n.t('panelLabelLicense')
+      document.getElementById('opt-none').textContent = window.i18n.t('licenseNone')
+      document.getElementById('opt-serial').textContent = window.i18n.t('licenseSerial')
+      document.getElementById('opt-account').textContent = window.i18n.t('licenseAccount')
+      document.getElementById('opt-subscription').textContent = window.i18n.t('licenseSubscription')
+      document.getElementById('panel-label-serial').textContent = window.i18n.t('panelLabelSerial')
+      document.getElementById('panel-serial').placeholder = window.i18n.t('serialPlaceholder')
+      document.getElementById('panel-label-username').textContent = window.i18n.t('panelLabelUsername')
+      document.getElementById('panel-label-password').textContent = window.i18n.t('panelLabelPassword')
+      document.getElementById('panel-label-installer').textContent = window.i18n.t('panelLabelInstaller')
+      document.getElementById('panel-installer').placeholder = window.i18n.t('installerPlaceholder')
+      document.getElementById('panel-installer-btn').textContent = window.i18n.t('browseFileBtn')
+      document.getElementById('panel-label-notes').textContent = window.i18n.t('panelLabelNotes')
+      document.getElementById('panel-notes').placeholder = window.i18n.t('notesPlaceholder')
+      document.getElementById('panel-save-btn').textContent = window.i18n.t('saveBtn')
+      document.getElementById('panel-close-btn').textContent = window.i18n.t('closeBtn')
 
       // אם יש תוצאות סריקה - רנדר מחדש בשפה החדשה
       if (lastPrograms.length > 0) renderTable(lastPrograms)
+      renderFolders()
     }
 
     function toggleLang() {
@@ -455,36 +543,6 @@
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
       document.getElementById('tab-' + name).classList.add('active')
       btn.classList.add('active')
-    }
-
-    function renderTable(programs) {
-      let html = `
-        <div class="card">
-          <h2>${window.i18n.t('foundPrograms', { count: programs.length })}</h2>
-        </div>
-        <table class="programs-table">
-          <thead>
-            <tr>
-              <th>${window.i18n.t('colName')}</th>
-              <th>${window.i18n.t('colVersion')}</th>
-              <th>${window.i18n.t('colPublisher')}</th>
-              <th>${window.i18n.t('colSize')}</th>
-              <th>${window.i18n.t('colStatus')}</th>
-            </tr>
-          </thead>
-          <tbody>
-      `
-      for (const p of programs) {
-        html += `<tr>
-          <td>${p.name}</td>
-          <td>${p.version || '-'}</td>
-          <td>${p.publisher || '-'}</td>
-          <td>${p.sizeDisplay}</td>
-          <td>${window.i18n.t('statusPending')}</td>
-        </tr>`
-      }
-      html += `</tbody></table>`
-      document.getElementById('programs-list').innerHTML = html
     }
 
     async function startScan() {
@@ -521,7 +579,7 @@
     let foldersData = []
 
     async function addFolders() {
-      const paths = await window.electronAPI.browseFolder()
+      const paths = await window.electronAPI.browseFolder(window.i18n.getLang())
       if (!paths || paths.length === 0) return
 
       for (const folderPath of paths) {
@@ -640,12 +698,43 @@
       document.getElementById('panel-name').value = program.name
       document.getElementById('panel-version').value = program.version || '-'
       document.getElementById('panel-publisher').value = program.publisher || '-'
-      document.getElementById('panel-license-type').value = saved.licenseType || 'none'
+
+      // אם יש זיהוי אוטומטי ואין עדיין בחירה ידנית - השתמש בזיהוי
+      const licenseType = saved.licenseType || program.detectedLicenseType || 'none'
+      document.getElementById('panel-license-type').value = licenseType
       document.getElementById('panel-serial').value = saved.serial || ''
       document.getElementById('panel-username').value = saved.username || ''
       document.getElementById('panel-password').value = saved.password || ''
       document.getElementById('panel-installer').value = saved.installer || ''
       document.getElementById('panel-notes').value = saved.notes || ''
+
+      // הצגת hint
+      const hintEl = document.getElementById('panel-hint')
+      if (program.detectedHint) {
+        hintEl.textContent = '💡 ' + program.detectedHint
+        hintEl.style.display = 'block'
+      } else {
+        hintEl.style.display = 'none'
+      }
+
+      // הצגת notes (אזהרות)
+      const notesDetectedEl = document.getElementById('panel-notes-detected')
+      if (program.detectedNotes) {
+        notesDetectedEl.textContent = '⚠️ ' + program.detectedNotes
+        notesDetectedEl.style.display = 'block'
+      } else {
+        notesDetectedEl.style.display = 'none'
+      }
+
+      // הצגת תיקיות נתונים
+      const dataFoldersEl = document.getElementById('panel-data-folders')
+      if (program.detectedDataFolders && program.detectedDataFolders.length > 0) {
+        dataFoldersEl.innerHTML = '📁 <strong>Data folders to backup:</strong><br>' +
+          program.detectedDataFolders.map(f => '&nbsp;&nbsp;• ' + f).join('<br>')
+        dataFoldersEl.style.display = 'block'
+      } else {
+        dataFoldersEl.style.display = 'none'
+      }
 
       onLicenseTypeChange()
       document.getElementById('side-panel').classList.add('open')
@@ -701,11 +790,11 @@
             const hasInstaller = !!saved.installer
             const hasLicense = saved.licenseType === 'none' || !!saved.serial || !!saved.username
             if (hasInstaller && hasLicense) {
-              statusCell.innerHTML = '<span class="status-badge status-ready">✅ מוכן</span>'
+              statusCell.innerHTML = `<span class="status-badge status-ready">✅ ${window.i18n.t('statusReady')}</span>`
             } else if (hasInstaller || hasLicense) {
-              statusCell.innerHTML = '<span class="status-badge status-partial">⚠️ חלקי</span>'
+              statusCell.innerHTML = `<span class="status-badge status-partial">⚠️ ${window.i18n.t('statusPartial')}</span>`
             } else {
-              statusCell.innerHTML = '<span class="status-badge status-pending">⚪ ממתין</span>'
+              statusCell.innerHTML = `<span class="status-badge status-pending">⚪ ${window.i18n.t('statusPending')}</span>`
             }
           }
         }
@@ -713,7 +802,7 @@
     }
 
     async function browseInstaller() {
-      const filePath = await window.electronAPI.browseFile()
+      const filePath = await window.electronAPI.browseFile(window.i18n.getLang())
       if (filePath) document.getElementById('panel-installer').value = filePath
     }
 
@@ -729,6 +818,7 @@
               <th>${window.i18n.t('colVersion')}</th>
               <th>${window.i18n.t('colPublisher')}</th>
               <th>${window.i18n.t('colSize')}</th>
+              <th>License</th>
               <th>${window.i18n.t('colStatus')}</th>
             </tr>
           </thead>
@@ -738,25 +828,155 @@
         const saved = programsData[p.id] || {}
         const hasInstaller = !!saved.installer
         const hasLicense = saved.licenseType === 'none' || !!saved.serial || !!saved.username
-        let statusHtml = '<span class="status-badge status-pending">⚪ ממתין</span>'
+        let statusHtml = `<span class="status-badge status-pending">⚪ ${window.i18n.t('statusPending')}</span>`
         if (hasInstaller && hasLicense) {
-          statusHtml = '<span class="status-badge status-ready">✅ מוכן</span>'
+          statusHtml = `<span class="status-badge status-ready">✅ ${window.i18n.t('statusReady')}</span>`
         } else if (hasInstaller || hasLicense) {
-          statusHtml = '<span class="status-badge status-partial">⚠️ חלקי</span>'
+          statusHtml = `<span class="status-badge status-partial">⚠️ ${window.i18n.t('statusPartial')}</span>`
         }
+
+        // אייקון סוג רישוי
+        let licenseIcon = ''
+        const lt = programsData[p.id]?.licenseType || p.detectedLicenseType
+        if (lt === 'account') licenseIcon = '🔐'
+        else if (lt === 'serial') licenseIcon = '🔑'
+        else if (lt === 'free') licenseIcon = '🆓'
+        else licenseIcon = '❓'
 
         html += `<tr data-id="${p.id}" onclick="openPanel(${JSON.stringify(p).replace(/"/g, '&quot;')})">
           <td>${p.name}</td>
           <td>${p.version || '-'}</td>
           <td>${p.publisher || '-'}</td>
           <td>${p.sizeDisplay}</td>
+          <td style="text-align:center; font-size:18px">${licenseIcon}</td>
           <td class="status-cell">${statusHtml}</td>
         </tr>`
       }
       html += `</tbody></table>`
       document.getElementById('programs-list').innerHTML = html
     }
+    // ═══ EXPORT ═══
+    let exportFolderPath = null
 
+    async function selectExportFolder() {
+      const paths = await window.electronAPI.browseFolder()
+      if (!paths || paths.length === 0) return
+      exportFolderPath = paths[0]
+      document.getElementById('export-usb-path').innerHTML =
+        `📁 <strong>${exportFolderPath}</strong>`
+      document.getElementById('export-usb-path').style.color = '#7c9ef8'
+
+      // הצג סיכום
+      showExportSummary()
+      document.getElementById('btn-start-export').style.display = 'inline-block'
+    }
+
+    function showExportSummary() {
+      const summary = document.getElementById('export-summary')
+      const content = document.getElementById('export-summary-content')
+      summary.style.display = 'block'
+
+      const readyPrograms = lastPrograms.filter(p => {
+        const saved = programsData[p.id] || {}
+        const hasInstaller = !!saved.installer
+        const hasLicense = saved.licenseType === 'none' || !!saved.serial || !!saved.username
+        return hasInstaller || hasLicense || p.detectedLicenseType
+      })
+
+      const withDataFolders = lastPrograms.filter(p =>
+        p.detectedDataFolders && p.detectedDataFolders.length > 0
+      )
+
+      const totalInstallers = lastPrograms.filter(p =>
+        programsData[p.id]?.installer
+      ).length
+
+      content.innerHTML = `
+        <div class="export-item">
+          <span class="item-icon">📋</span>
+          <span class="item-name">Program list & license info</span>
+          <span class="item-status success">${lastPrograms.length} programs</span>
+        </div>
+        <div class="export-item">
+          <span class="item-icon">⚙️</span>
+          <span class="item-name">App settings & data folders</span>
+          <span class="item-status success">${withDataFolders.length} programs with known data folders</span>
+        </div>
+        <div class="export-item">
+          <span class="item-icon">💿</span>
+          <span class="item-name">Installer files</span>
+          <span class="item-status ${totalInstallers > 0 ? 'success' : 'warning'}">${totalInstallers} installer files saved</span>
+        </div>
+        <div class="export-item">
+          <span class="item-icon">📦</span>
+          <span class="item-name">Winget package list</span>
+          <span class="item-status success">Auto-generated for new PC installation</span>
+        </div>
+        <div class="export-item">
+          <span class="item-icon">📁</span>
+          <span class="item-name">Custom folders</span>
+          <span class="item-status ${foldersData.length > 0 ? 'success' : 'warning'}">${foldersData.length} folders selected</span>
+        </div>
+      `
+    }
+
+    function updateProgress(text, percent) {
+      document.getElementById('export-progress-text').textContent = text
+      document.getElementById('export-progress-bar').style.width = percent + '%'
+      document.getElementById('export-progress-percent').textContent = percent + '%'
+    }
+
+    async function startExport() {
+      if (!exportFolderPath) return
+
+      document.getElementById('export-progress-card').style.display = 'block'
+      document.getElementById('export-result').style.display = 'none'
+      document.getElementById('btn-start-export').disabled = true
+
+      try {
+        updateProgress('Creating export folder...', 5)
+        const result = await window.electronAPI.startExport(exportFolderPath, {
+          programs: lastPrograms,
+          programsData,
+          foldersData
+        })
+
+        document.getElementById('export-progress-card').style.display = 'none'
+
+        const resultEl = document.getElementById('export-result')
+        const titleEl = document.getElementById('export-result-title')
+        const contentEl = document.getElementById('export-result-content')
+
+        resultEl.style.display = 'block'
+
+        if (result.success) {
+          titleEl.textContent = '✅ Export Complete!'
+          titleEl.style.color = '#4caf82'
+          contentEl.innerHTML = `
+            <p style="color:#aaaacc; margin-bottom:12px">Your data has been exported to:</p>
+            <p style="color:#7c9ef8; font-size:13px; margin-bottom:16px"><strong>${result.exportPath}</strong></p>
+            <div style="background:#1a2a1e; border-radius:8px; padding:12px; font-size:13px; color:#4caf82;">
+              ${result.log.map(l => '✓ ' + l).join('<br>')}
+            </div>
+            <p style="color:#aaaacc; font-size:12px; margin-top:12px">
+              On your new PC: install MigrateMyPC, connect this USB drive, and click "Import".
+            </p>
+          `
+        } else {
+          titleEl.textContent = '❌ Export Failed'
+          titleEl.style.color = '#ff6b6b'
+          contentEl.innerHTML = `<p style="color:#ff6b6b">${result.error}</p>`
+        }
+      } catch (err) {
+        document.getElementById('export-progress-card').style.display = 'none'
+        document.getElementById('export-result').style.display = 'block'
+        document.getElementById('export-result-title').textContent = '❌ Export Failed'
+        document.getElementById('export-result-content').innerHTML =
+          `<p style="color:#ff6b6b">${err.message}</p>`
+      }
+
+      document.getElementById('btn-start-export').disabled = false
+    }
     // אתחול ראשוני
     renderAll()
   </script>

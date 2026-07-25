@@ -6,5 +6,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   browseFolder: () => ipcRenderer.invoke('browse-folder'),
   getFolderSize: (path) => ipcRenderer.invoke('get-folder-size', path),
   loadData: () => ipcRenderer.invoke('load-data'),
-  saveData: (data) => ipcRenderer.invoke('save-data', data)
+  saveData: (data) => ipcRenderer.invoke('save-data', data),
+  startExport: (folder, data) => ipcRenderer.invoke('start-export', folder, data)
 })
