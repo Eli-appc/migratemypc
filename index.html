@@ -244,6 +244,58 @@
     .status-ready { background: #1a4a2e; color: #4caf82; }
     .status-partial { background: #4a3a1a; color: #f0a830; }
     .status-pending { background: #3a3a5e; color: #aaaacc; }
+    /* תיקיות */
+    .folder-item {
+      background: #2a2a3e;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .folder-icon { font-size: 24px; flex-shrink: 0; }
+
+    .folder-info { flex: 1; min-width: 0; }
+
+    .folder-path {
+      color: #ffffff;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .folder-size {
+      color: #7c9ef8;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    .folder-note-input {
+      width: 100%;
+      background: #1e1e2e;
+      border: 1px solid #3a3a5e;
+      color: #ffffff;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    .btn-remove {
+      background: #4a1a1a;
+      color: #ff6b6b;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .btn-remove:hover { background: #6a2a2a; }
   </style>
 </head>
 <body>
@@ -277,11 +329,18 @@
       <div class="card">
         <h2 id="folders-title"></h2>
         <p id="folders-desc"></p>
-        <button class="btn-primary" id="folders-btn"></button>
+        <button class="btn-primary" id="folders-add-btn" onclick="addFolders()">📁 הוסף תיקייה</button>
       </div>
-      <div class="empty-state">
-        <div class="icon">📁</div>
-        <p id="no-folders"></p>
+
+      <div id="folders-list">
+        <div class="empty-state">
+          <div class="icon">📁</div>
+          <p id="no-folders"></p>
+        </div>
+      </div>
+
+      <div id="folders-summary" style="display:none" class="card">
+        <h2 id="folders-total-label"></h2>
       </div>
     </div>
 
@@ -377,6 +436,7 @@
       document.getElementById('folders-title').textContent = window.i18n.t('foldersTitle')
       document.getElementById('folders-desc').textContent = window.i18n.t('foldersDesc')
       document.getElementById('folders-btn').textContent = window.i18n.t('foldersBtn')
+      document.getElementById('folders-add-btn').textContent = window.i18n.t('foldersAddBtn')
       document.getElementById('no-folders').textContent = window.i18n.t('noFolders')
       document.getElementById('coming-soon').textContent = window.i18n.t('comingSoon')
       document.getElementById('lang-toggle').textContent = lang === 'he' ? 'EN' : 'עב'
@@ -457,14 +517,118 @@
       }
     }
 
-    // נתוני תוכנות שמורים
-    let programsData = {}
+    // נתוני תיקיות
+    let foldersData = []
+
+    async function addFolders() {
+      const paths = await window.electronAPI.browseFolder()
+      if (!paths || paths.length === 0) return
+
+      for (const folderPath of paths) {
+        // בדיקת כפילות
+        if (foldersData.find(f => f.path === folderPath)) {
+          alert(window.i18n.t('foldersDuplicate'))
+          continue
+        }
+
+        const folder = {
+          id: Date.now() + Math.random(),
+          path: folderPath,
+          sizeBytes: 0,
+          sizeDisplay: window.i18n.t('foldersCalculating'),
+          note: ''
+        }
+
+        foldersData.push(folder)
+        renderFolders()
+
+        // חישוב נפח ברקע
+        const size = await window.electronAPI.getFolderSize(folderPath)
+        folder.sizeBytes = size
+        folder.sizeDisplay = formatSize(size)
+        await window.electronAPI.saveData({ programs: programsData, folders: foldersData })
+        renderFolders()
+      }
+    }
+
+    function removeFolder(id) {
+      foldersData = foldersData.filter(f => f.id !== id)
+      window.electronAPI.saveData({ programs: programsData, folders: foldersData })
+      renderFolders()
+    }
+
+    function updateFolderNote(id, note) {
+      const folder = foldersData.find(f => f.id === id)
+      if (folder) {
+        folder.note = note
+        window.electronAPI.saveData({ programs: programsData, folders: foldersData })
+      }
+    }
+
+    function formatSize(bytes) {
+      if (bytes === 0) return window.i18n.t('unknown')
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
+      if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+      return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
+    }
+
+    function renderFolders() {
+      const list = document.getElementById('folders-list')
+      const summary = document.getElementById('folders-summary')
+
+      if (foldersData.length === 0) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">📁</div>
+            <p>${window.i18n.t('noFolders')}</p>
+          </div>
+        `
+        summary.style.display = 'none'
+        return
+      }
+
+      let html = ''
+      let totalBytes = 0
+
+      for (const folder of foldersData) {
+        totalBytes += folder.sizeBytes || 0
+        html += `
+          <div class="folder-item">
+            <div class="folder-icon">📁</div>
+            <div class="folder-info">
+              <div class="folder-path" title="${folder.path}">${folder.path}</div>
+              <div class="folder-size">${folder.sizeDisplay}</div>
+              <input 
+                class="folder-note-input" 
+                placeholder="${window.i18n.t('foldersNotePlaceholder')}"
+                value="${folder.note || ''}"
+                onchange="updateFolderNote(${folder.id}, this.value)"
+              >
+            </div>
+            <button class="btn-remove" onclick="removeFolder(${folder.id})">
+              🗑️ ${window.i18n.t('foldersRemove')}
+            </button>
+          </div>
+        `
+      }
+
+      list.innerHTML = html
+
+      // סיכום נפח כולל
+      summary.style.display = 'block'
+      document.getElementById('folders-total-label').textContent =
+        `${window.i18n.t('foldersTotal')}: ${formatSize(totalBytes)}`
+    }
     let selectedProgramId = null
 
     // טעינת נתונים שמורים בהפעלה
     async function initData() {
       const saved = await window.electronAPI.loadData()
-      if (saved) programsData = saved
+      if (saved) {
+        programsData = saved.programs || saved
+        foldersData = saved.folders || []
+        renderFolders()
+      }
     }
 
     initData()
@@ -520,7 +684,7 @@
       }
 
       // שמירה לדיסק
-      await window.electronAPI.saveData(programsData)
+      await window.electronAPI.saveData({ programs: programsData, folders: foldersData })
 
       // עדכון סטטוס בטבלה
       updateRowStatus(selectedProgramId)

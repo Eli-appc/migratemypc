@@ -22,7 +22,21 @@ const translations = {
     noFolders: 'לא נבחרו תיקיות עדיין',
     comingSoon: 'אפשרויות נוספות יתווספו בעתיד',
     scanError: 'שגיאה בסריקה',
-    unknown: 'לא ידוע'
+    unknown: 'Unknown',
+    foldersAddBtn: '📁 Add Folder',
+    foldersCalculating: 'Calculating size...',
+    foldersRemove: 'Remove',
+    foldersNote: 'Note',
+    foldersNotePlaceholder: 'Why is this folder important...',
+    foldersDuplicate: 'Folder already in list',
+    foldersTotal: 'Total to backup',
+    foldersAddBtn: '📁 הוסף תיקייה',
+    foldersCalculating: 'מחשב נפח...',
+    foldersRemove: 'הסר',
+    foldersNote: 'הערה',
+    foldersNotePlaceholder: 'למה התיקייה הזו חשובה...',
+    foldersDuplicate: 'התיקייה כבר נמצאת ברשימה',
+    foldersTotal: 'סה"כ לגיבוי'
   },
   en: {
     appName: 'MigrateMyPC',
