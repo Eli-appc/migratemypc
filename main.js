@@ -48,12 +48,13 @@ ipcMain.handle('save-data', async (event, data) => {
 })
 
 ipcMain.handle('start-export', async (event, exportFolder, data) => {
-  const fs = require('fs')
-  const path = require('path')
-  const { execSync } = require('child_process')
-  const log = []
+const os = require('os')
+const fs = require('fs')
+const path = require('path')
+const { execSync } = require('child_process')
+const log = []
 
-  try {
+try {
     // יצירת תיקיית הייצוא
     const exportPath = path.join(exportFolder, 'MigrateMyPC_Export')
     if (!fs.existsSync(exportPath)) fs.mkdirSync(exportPath, { recursive: true })
@@ -76,10 +77,34 @@ ipcMain.handle('start-export', async (event, exportFolder, data) => {
     // 2. winget export
     try {
       const wingetPath = path.join(exportPath, 'winget-packages.json')
-      execSync(`winget export -o "${wingetPath}" --ignore-unavailable`, { windowsHide: true })
+      // חיפוש winget במיקומים אפשריים
+      const wingetLocations = [
+        'winget',
+        'C:\\Program Files\\WindowsApps\\Microsoft.DesktopAppInstaller_*\\winget.exe',
+        process.env.LOCALAPPDATA + '\\Microsoft\\WindowsApps\\winget.exe'
+      ]
+      
+      let wingetCmd = null
+      for (const loc of wingetLocations) {
+        try {
+          execSync(`"${loc}" --version`, { windowsHide: true, stdio: 'ignore' })
+          wingetCmd = loc
+          break
+        } catch {}
+      }
+
+      // כתיבת סקריפט זמני
+      const wingetScript = `winget export -o "${wingetPath.replace(/\\/g, '\\\\')}" --ignore-unavailable`
+      const wingetScriptPath = path.join(os.tmpdir(), 'migratemypc_winget.ps1')
+      fs.writeFileSync(wingetScriptPath, wingetScript, 'utf8')
+      execSync(
+        `powershell -NoProfile -ExecutionPolicy Bypass -File "${wingetScriptPath}"`,
+        { windowsHide: true, timeout: 60000 }
+      )
+      try { fs.unlinkSync(wingetScriptPath) } catch {}
       log.push('Saved winget package list (winget-packages.json)')
-    } catch {
-      log.push('winget export skipped (winget not available)')
+    } catch (e) {
+      log.push('winget export skipped: ' + e.message.substring(0, 50))
     }
 
     // 3. העתקת קבצי התקנה
