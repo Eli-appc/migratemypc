@@ -1,0 +1,16 @@
+{
+  "name": "migratemypc",
+  "version": "1.0.0",
+  "description": "Migration tool for Windows PCs",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^24.0.0"
+  }
+}

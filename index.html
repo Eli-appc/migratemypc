@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>MigrateMyPC</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #1e1e2e;
+      color: #ffffff;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .toolbar {
+      background: #2a2a3e;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 2px solid #3a3a5e;
+      height: 52px;
+      flex-shrink: 0;
+    }
+
+    .toolbar-title {
+      color: #7c9ef8;
+      font-size: 18px;
+      font-weight: bold;
+      margin-left: 20px;
+      margin-right: 20px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      color: #aaaacc;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 6px 6px 0 0;
+      cursor: pointer;
+      font-size: 14px;
+      height: 52px;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover { background: #3a3a5e; color: #ffffff; }
+    .tab-btn.active { color: #7c9ef8; border-bottom: 3px solid #7c9ef8; background: #1e1e2e; }
+
+    .toolbar-spacer { flex: 1; }
+
+    .lang-btn {
+      background: #3a3a5e;
+      color: #aaaacc;
+      border: 1px solid #5a5a7e;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: bold;
+      transition: all 0.2s;
+    }
+
+    .lang-btn:hover { background: #5a5a7e; color: #ffffff; }
+
+    .content { flex: 1; padding: 24px; overflow-y: auto; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .card {
+      background: #2a2a3e;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .card h2 { color: #7c9ef8; margin-bottom: 8px; font-size: 16px; }
+    .card p { color: #aaaacc; font-size: 14px; line-height: 1.6; }
+
+    .btn-primary {
+      background: #7c9ef8;
+      color: #1e1e2e;
+      border: none;
+      padding: 12px 28px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: bold;
+      margin-top: 16px;
+      transition: background 0.2s;
+    }
+
+    .btn-primary:hover { background: #5b7de8; }
+
+    .empty-state { text-align: center; padding: 60px 20px; color: #aaaacc; }
+    .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+
+    .programs-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+
+    .programs-table th {
+      background: #2a2a3e;
+      color: #7c9ef8;
+      padding: 12px 16px;
+      text-align: right;
+      font-size: 14px;
+      position: sticky;
+      top: 0;
+    }
+
+    html[dir="ltr"] .programs-table th { text-align: left; }
+
+    .programs-table td {
+      padding: 10px 16px;
+      font-size: 13px;
+      color: #ddddee;
+      border-bottom: 1px solid #2a2a3e;
+    }
+
+    .programs-table tbody tr:hover { background: #2a2a3e; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <span class="toolbar-title" id="app-title">MigrateMyPC 🖥️</span>
+    <button class="tab-btn active" id="tab-btn-programs" onclick="switchTab('programs', this)"></button>
+    <button class="tab-btn" id="tab-btn-folders" onclick="switchTab('folders', this)"></button>
+    <button class="tab-btn" onclick="switchTab('more', this)" title="בקרוב">+</button>
+    <div class="toolbar-spacer"></div>
+    <button class="lang-btn" id="lang-toggle" onclick="toggleLang()">EN</button>
+  </div>
+
+  <div class="content">
+    <div id="tab-programs" class="tab-panel active">
+      <div class="card">
+        <h2 id="scan-title"></h2>
+        <p id="scan-desc"></p>
+        <button class="btn-primary" id="scan-btn" onclick="startScan()"></button>
+      </div>
+      <div id="programs-list">
+        <div class="empty-state">
+          <div class="icon">📦</div>
+          <p id="click-to-scan"></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-folders" class="tab-panel">
+      <div class="card">
+        <h2 id="folders-title"></h2>
+        <p id="folders-desc"></p>
+        <button class="btn-primary" id="folders-btn"></button>
+      </div>
+      <div class="empty-state">
+        <div class="icon">📁</div>
+        <p id="no-folders"></p>
+      </div>
+    </div>
+
+    <div id="tab-more" class="tab-panel">
+      <div class="empty-state">
+        <div class="icon">🚧</div>
+        <p id="coming-soon"></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script>
+    let lastPrograms = []
+
+    function renderAll() {
+      const lang = window.i18n.getLang()
+
+      document.getElementById('app-title').textContent = window.i18n.t('appName') + ' 🖥️'
+      document.getElementById('tab-btn-programs').textContent = window.i18n.t('tabPrograms')
+      document.getElementById('tab-btn-folders').textContent = window.i18n.t('tabFolders')
+      document.getElementById('scan-title').textContent = window.i18n.t('scanTitle')
+      document.getElementById('scan-desc').textContent = window.i18n.t('scanDesc')
+      document.getElementById('scan-btn').textContent = window.i18n.t('scanBtn')
+      document.getElementById('click-to-scan').textContent = window.i18n.t('clickToScan')
+      document.getElementById('folders-title').textContent = window.i18n.t('foldersTitle')
+      document.getElementById('folders-desc').textContent = window.i18n.t('foldersDesc')
+      document.getElementById('folders-btn').textContent = window.i18n.t('foldersBtn')
+      document.getElementById('no-folders').textContent = window.i18n.t('noFolders')
+      document.getElementById('coming-soon').textContent = window.i18n.t('comingSoon')
+      document.getElementById('lang-toggle').textContent = lang === 'he' ? 'EN' : 'עב'
+
+      // אם יש תוצאות סריקה - רנדר מחדש בשפה החדשה
+      if (lastPrograms.length > 0) renderTable(lastPrograms)
+    }
+
+    function toggleLang() {
+      const current = window.i18n.getLang()
+      window.i18n.setLang(current === 'he' ? 'en' : 'he')
+    }
+
+    function switchTab(name, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
+      document.getElementById('tab-' + name).classList.add('active')
+      btn.classList.add('active')
+    }
+
+    function renderTable(programs) {
+      let html = `
+        <div class="card">
+          <h2>${window.i18n.t('foundPrograms', { count: programs.length })}</h2>
+        </div>
+        <table class="programs-table">
+          <thead>
+            <tr>
+              <th>${window.i18n.t('colName')}</th>
+              <th>${window.i18n.t('colVersion')}</th>
+              <th>${window.i18n.t('colPublisher')}</th>
+              <th>${window.i18n.t('colSize')}</th>
+              <th>${window.i18n.t('colStatus')}</th>
+            </tr>
+          </thead>
+          <tbody>
+      `
+      for (const p of programs) {
+        html += `<tr>
+          <td>${p.name}</td>
+          <td>${p.version || '-'}</td>
+          <td>${p.publisher || '-'}</td>
+          <td>${p.sizeDisplay}</td>
+          <td>${window.i18n.t('statusPending')}</td>
+        </tr>`
+      }
+      html += `</tbody></table>`
+      document.getElementById('programs-list').innerHTML = html
+    }
+
+    async function startScan() {
+      document.getElementById('programs-list').innerHTML = `
+        <div class="empty-state">
+          <div class="icon">⏳</div>
+          <p>${window.i18n.t('scanning')}</p>
+        </div>
+      `
+      try {
+        const programs = await window.electronAPI.scanPrograms()
+        lastPrograms = programs
+        if (programs.length === 0) {
+          document.getElementById('programs-list').innerHTML = `
+            <div class="empty-state">
+              <div class="icon">🤷</div>
+              <p>${window.i18n.t('noPrograms')}</p>
+            </div>
+          `
+          return
+        }
+        renderTable(programs)
+      } catch (error) {
+        document.getElementById('programs-list').innerHTML = `
+          <div class="empty-state">
+            <div class="icon">❌</div>
+            <p>${window.i18n.t('scanError')}: ${error.message}</p>
+          </div>
+        `
+      }
+    }
+
+    // אתחול ראשוני
+    renderAll()
+  </script>
+
+</body>
+</html>
