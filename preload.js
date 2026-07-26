@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadData: () => ipcRenderer.invoke('load-data'),
   saveData: (data) => ipcRenderer.invoke('save-data', data),
   startExport: (folder, data) => ipcRenderer.invoke('start-export', folder, data),
+  onExportProgress: (callback) => ipcRenderer.on('export-progress', (event, data) => callback(data)),
   loadManifest: (folder) => ipcRenderer.invoke('load-manifest', folder),
   startImport: (folder, options) => ipcRenderer.invoke('start-import', folder, options),
   openPath: (p) => ipcRenderer.invoke('open-path', p)

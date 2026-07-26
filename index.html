@@ -841,13 +841,20 @@
     }
 
     function renderTable(programs) {
+      const includedCount = programs.filter(p => !(programsData[p.id]?.excluded)).length
+      const allIncluded = includedCount === programs.length
+
       let html = `
         <div class="card">
-          <h2>${window.i18n.t('foundPrograms', { count: programs.length })}</h2>
+          <h2>${window.i18n.t('foundPrograms', { count: programs.length })} — <span id="selected-count" style="color:#4caf82">${includedCount} selected for migration</span></h2>
         </div>
         <table class="programs-table">
           <thead>
             <tr>
+              <th style="width:36px; text-align:center">
+                <input type="checkbox" id="chk-all-programs" ${allIncluded ? 'checked' : ''}
+                  onchange="toggleAllPrograms(this.checked)" title="Select / deselect all" style="cursor:pointer">
+              </th>
               <th>${window.i18n.t('colName')}</th>
               <th>${window.i18n.t('colVersion')}</th>
               <th>${window.i18n.t('colPublisher')}</th>
@@ -860,6 +867,7 @@
       `
       for (const p of programs) {
         const saved = programsData[p.id] || {}
+        const isExcluded = !!saved.excluded
         const hasInstaller = !!saved.installer
         const hasLicense = saved.licenseType === 'none' || !!saved.serial || !!saved.username
         let statusHtml = `<span class="status-badge status-pending">⚪ ${window.i18n.t('statusPending')}</span>`
@@ -877,7 +885,11 @@
         else if (lt === 'free') licenseIcon = '🆓'
         else licenseIcon = '❓'
 
-        html += `<tr data-id="${p.id}" onclick="openPanel(${JSON.stringify(p).replace(/"/g, '&quot;')})">
+        html += `<tr data-id="${p.id}" style="opacity:${isExcluded ? '0.4' : '1'}" onclick="openPanel(${JSON.stringify(p).replace(/"/g, '&quot;')})">
+          <td style="text-align:center" onclick="event.stopPropagation()">
+            <input type="checkbox" data-id="${p.id}" ${isExcluded ? '' : 'checked'}
+              onchange="toggleProgram(this)" style="cursor:pointer">
+          </td>
           <td>${p.name}</td>
           <td>${p.version || '-'}</td>
           <td>${p.publisher || '-'}</td>
@@ -889,8 +901,42 @@
       html += `</tbody></table>`
       document.getElementById('programs-list').innerHTML = html
     }
+
+    // סימון/ביטול תוכנה בודדת למיגרציה
+    function toggleProgram(el) {
+      const id = el.dataset.id
+      if (!programsData[id]) programsData[id] = {}
+      programsData[id].excluded = !el.checked
+      el.closest('tr').style.opacity = el.checked ? '1' : '0.4'
+      window.electronAPI.saveData({ programs: programsData, folders: foldersData })
+      updateSelectedCount()
+    }
+
+    // סימון/ביטול כל התוכנות בבת אחת
+    function toggleAllPrograms(checked) {
+      for (const p of lastPrograms) {
+        if (!programsData[p.id]) programsData[p.id] = {}
+        programsData[p.id].excluded = !checked
+      }
+      window.electronAPI.saveData({ programs: programsData, folders: foldersData })
+      renderTable(lastPrograms)
+    }
+
+    function updateSelectedCount() {
+      const el = document.getElementById('selected-count')
+      if (!el) return
+      const n = lastPrograms.filter(p => !(programsData[p.id]?.excluded)).length
+      el.textContent = `${n} selected for migration`
+      const chkAll = document.getElementById('chk-all-programs')
+      if (chkAll) chkAll.checked = (n === lastPrograms.length)
+    }
     // ═══ EXPORT ═══
     let exportFolderPath = null
+
+    // עדכוני התקדמות חיים מהתהליך הראשי
+    if (window.electronAPI.onExportProgress) {
+      window.electronAPI.onExportProgress(data => updateProgress(data.text, data.percent))
+    }
 
     async function selectExportFolder() {
       const paths = await window.electronAPI.browseFolder()
@@ -910,18 +956,15 @@
       const content = document.getElementById('export-summary-content')
       summary.style.display = 'block'
 
-      const readyPrograms = lastPrograms.filter(p => {
-        const saved = programsData[p.id] || {}
-        const hasInstaller = !!saved.installer
-        const hasLicense = saved.licenseType === 'none' || !!saved.serial || !!saved.username
-        return hasInstaller || hasLicense || p.detectedLicenseType
-      })
+      // רק תוכנות שמסומנות למיגרציה
+      const included = lastPrograms.filter(p => !(programsData[p.id]?.excluded))
+      const excludedCount = lastPrograms.length - included.length
 
-      const withDataFolders = lastPrograms.filter(p =>
+      const withDataFolders = included.filter(p =>
         p.detectedDataFolders && p.detectedDataFolders.length > 0
       )
 
-      const totalInstallers = lastPrograms.filter(p =>
+      const totalInstallers = included.filter(p =>
         programsData[p.id]?.installer
       ).length
 
@@ -929,7 +972,7 @@
         <div class="export-item">
           <span class="item-icon">📋</span>
           <span class="item-name">Program list & license info</span>
-          <span class="item-status success">${lastPrograms.length} programs</span>
+          <span class="item-status success">${included.length} programs${excludedCount > 0 ? ` (${excludedCount} excluded)` : ''}</span>
         </div>
         <div class="export-item">
           <span class="item-icon">⚙️</span>
@@ -968,11 +1011,21 @@
       document.getElementById('btn-start-export').disabled = true
 
       try {
-        updateProgress('Creating export folder...', 5)
+        updateProgress('Starting export...', 1)
+
+        // שולחים לייצוא רק תוכנות שמסומנות למיגרציה
+        const includedPrograms = lastPrograms.filter(p => !(programsData[p.id]?.excluded))
+        const excludedNames = lastPrograms.filter(p => programsData[p.id]?.excluded).map(p => p.name)
+        const includedData = {}
+        for (const p of includedPrograms) {
+          if (programsData[p.id]) includedData[p.id] = programsData[p.id]
+        }
+
         const result = await window.electronAPI.startExport(exportFolderPath, {
-          programs: lastPrograms,
-          programsData,
-          foldersData
+          programs: includedPrograms,
+          programsData: includedData,
+          foldersData,
+          excludedNames
         })
 
         document.getElementById('export-progress-card').style.display = 'none'

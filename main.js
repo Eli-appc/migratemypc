@@ -1,7 +1,17 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
+const { exec } = require('child_process')
 const { scanInstalledPrograms } = require('./scanner')
 const { loadData, saveData } = require('./storage')
+
+// מריץ פקודה ברקע בלי להקפיא את האפליקציה, ומחזיר את קוד היציאה (0 = הצלחה)
+function runCommand(command, options = {}) {
+  return new Promise((resolve) => {
+    exec(command, { windowsHide: true, maxBuffer: 10 * 1024 * 1024, ...options }, (error) => {
+      resolve(error ? (typeof error.code === 'number' ? error.code : 1) : 0)
+    })
+  })
+}
 
 const DIALOG_STRINGS = {
   he: {
@@ -48,83 +58,110 @@ ipcMain.handle('save-data', async (event, data) => {
 })
 
 ipcMain.handle('start-export', async (event, exportFolder, data) => {
-const os = require('os')
-const fs = require('fs')
-const path = require('path')
-const { execSync } = require('child_process')
-const log = []
+  const os = require('os')
+  const fs = require('fs')
+  const path = require('path')
+  const log = []
 
-try {
+  // שליחת עדכון התקדמות חי למסך
+  const sendProgress = (text, percent) => {
+    try { event.sender.send('export-progress', { text, percent }) } catch {}
+  }
+
+  try {
     // יצירת תיקיית הייצוא
+    sendProgress('Creating export folder...', 3)
     const exportPath = path.join(exportFolder, 'MigrateMyPC_Export')
     if (!fs.existsSync(exportPath)) fs.mkdirSync(exportPath, { recursive: true })
 
     // 1. שמירת manifest
+    sendProgress('Saving program list (manifest.json)...', 6)
     const manifest = {
       exportDate: new Date().toISOString(),
-      computerName: require('os').hostname(),
+      computerName: os.hostname(),
       programs: data.programs,
       programsData: data.programsData,
       foldersData: data.foldersData
     }
-    fs.writeFileSync(
+    await fs.promises.writeFile(
       path.join(exportPath, 'manifest.json'),
       JSON.stringify(manifest, null, 2),
       'utf8'
     )
     log.push('Saved program list and settings (manifest.json)')
 
-    // 2. winget export
+    // 2. winget export - רץ ברקע בלי להקפיא את החלון
+    sendProgress('Exporting winget package list (can take up to a minute)...', 10)
     try {
       const wingetPath = path.join(exportPath, 'winget-packages.json')
-      // חיפוש winget במיקומים אפשריים
-      const wingetLocations = [
-        'winget',
-        'C:\\Program Files\\WindowsApps\\Microsoft.DesktopAppInstaller_*\\winget.exe',
-        process.env.LOCALAPPDATA + '\\Microsoft\\WindowsApps\\winget.exe'
-      ]
-      
-      let wingetCmd = null
-      for (const loc of wingetLocations) {
-        try {
-          execSync(`"${loc}" --version`, { windowsHide: true, stdio: 'ignore' })
-          wingetCmd = loc
-          break
-        } catch {}
-      }
-
-      // כתיבת סקריפט זמני
       const wingetScript = `winget export -o "${wingetPath.replace(/\\/g, '\\\\')}" --ignore-unavailable`
       const wingetScriptPath = path.join(os.tmpdir(), 'migratemypc_winget.ps1')
-      fs.writeFileSync(wingetScriptPath, wingetScript, 'utf8')
-      execSync(
+      await fs.promises.writeFile(wingetScriptPath, wingetScript, 'utf8')
+      await runCommand(
         `powershell -NoProfile -ExecutionPolicy Bypass -File "${wingetScriptPath}"`,
-        { windowsHide: true, timeout: 60000 }
+        { timeout: 120000 }
       )
       try { fs.unlinkSync(wingetScriptPath) } catch {}
-      log.push('Saved winget package list (winget-packages.json)')
+      if (fs.existsSync(wingetPath)) {
+        log.push('Saved winget package list (winget-packages.json)')
+
+        // הסרת תוכנות שהוחרגו מרשימת ההתקנה של winget
+        // (winget מייצא תמיד את כל מה שמותקן, אז מסננים אחרי)
+        if (data.excludedNames && data.excludedNames.length > 0) {
+          try {
+            const wj = JSON.parse(await fs.promises.readFile(wingetPath, 'utf8'))
+            const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+            // שמות קצרים מדי עלולים להתאים בטעות לחבילות לא קשורות
+            const excluded = data.excludedNames.map(norm).filter(n => n.length >= 4)
+            let removed = 0
+            for (const src of (wj.Sources || [])) {
+              const before = (src.Packages || []).length
+              src.Packages = (src.Packages || []).filter(pkg => {
+                const idNorm = norm(pkg.PackageIdentifier)
+                return !excluded.some(e => idNorm.includes(e))
+              })
+              removed += before - src.Packages.length
+            }
+            if (removed > 0) {
+              await fs.promises.writeFile(wingetPath, JSON.stringify(wj, null, 2), 'utf8')
+              log.push(`Removed ${removed} excluded programs from winget install list`)
+            }
+          } catch {}
+        }
+      } else {
+        log.push('winget export skipped (winget not available)')
+      }
     } catch (e) {
       log.push('winget export skipped: ' + e.message.substring(0, 50))
     }
 
     // 3. העתקת קבצי התקנה
+    sendProgress('Copying installer files...', 25)
     const installersPath = path.join(exportPath, 'installers')
     let installersCopied = 0
     for (const [id, saved] of Object.entries(data.programsData)) {
       if (saved.installer && fs.existsSync(saved.installer)) {
         if (!fs.existsSync(installersPath)) fs.mkdirSync(installersPath)
         const fileName = path.basename(saved.installer)
-        fs.copyFileSync(saved.installer, path.join(installersPath, fileName))
+        await fs.promises.copyFile(saved.installer, path.join(installersPath, fileName))
         installersCopied++
       }
     }
     if (installersCopied > 0) log.push(`Copied ${installersCopied} installer files`)
 
-    // 4. העתקת תיקיות נתונים של תוכנות
+    // 4. העתקת תיקיות נתונים של תוכנות - עם דיווח התקדמות לכל תוכנה
     const appDataPath = path.join(exportPath, 'appdata')
     let appDataCopied = 0
-    for (const program of data.programs) {
-      if (!program.detectedDataFolders || program.detectedDataFolders.length === 0) continue
+    const programsWithFolders = data.programs.filter(p =>
+      p.detectedDataFolders && p.detectedDataFolders.length > 0
+    )
+    let programIndex = 0
+
+    for (const program of programsWithFolders) {
+      programIndex++
+      const percent = 30 + Math.round((programIndex / programsWithFolders.length) * 40) // 30% -> 70%
+      sendProgress(`Backing up settings: ${program.name}`, percent)
+
       for (const folder of program.detectedDataFolders) {
         const expanded = folder
           .replace(/%APPDATA%/gi, process.env.APPDATA)
@@ -153,41 +190,48 @@ try {
             const safeName = program.name.replace(/[<>:"/\\|?*]/g, '_')
             const dest = path.join(appDataPath, safeName, path.basename(src))
             if (stat.isDirectory()) {
-              execSync(`robocopy "${src}" "${dest}" /E /NFL /NDL /NJH /NJS /nc /ns /np`, { windowsHide: true })
+              // robocopy מחזיר קודים 0-7 בהצלחה
+              const code = await runCommand(`robocopy "${src}" "${dest}" /E /NFL /NDL /NJH /NJS /nc /ns /np`)
+              if (code <= 7) appDataCopied++
             } else {
               if (!fs.existsSync(path.dirname(dest))) fs.mkdirSync(path.dirname(dest), { recursive: true })
-              fs.copyFileSync(src, dest)
+              await fs.promises.copyFile(src, dest)
+              appDataCopied++
             }
-            appDataCopied++
           }
         } catch {}
       }
     }
     if (appDataCopied > 0) log.push(`Backed up app data for ${appDataCopied} locations`)
 
-    // 5. דחיסת תיקיות מותאמות אישית
+    // 5. דחיסת תיקיות מותאמות אישית - עם דיווח התקדמות לכל תיקייה
     const customFoldersPath = path.join(exportPath, 'custom_folders')
     let foldersCopied = 0
-    for (const folder of data.foldersData) {
-      if (!folder.path || !fs.existsSync(folder.path)) continue
+    const validFolders = (data.foldersData || []).filter(f => f.path && fs.existsSync(f.path))
+    let folderIndex = 0
+
+    for (const folder of validFolders) {
+      folderIndex++
+      const percent = 70 + Math.round((folderIndex / validFolders.length) * 25) // 70% -> 95%
+      sendProgress(`Compressing folder: ${path.basename(folder.path)} (large folders take time)`, percent)
+
       if (!fs.existsSync(customFoldersPath)) fs.mkdirSync(customFoldersPath)
       const folderName = path.basename(folder.path)
       const zipPath = path.join(customFoldersPath, folderName + '.zip')
-      try {
-        execSync(
-          `powershell -NoProfile -Command "Compress-Archive -Path '${folder.path}' -DestinationPath '${zipPath}' -Force"`,
-          { windowsHide: true, timeout: 300000 }
-        )
-        foldersCopied++
-      } catch {}
+      const code = await runCommand(
+        `powershell -NoProfile -Command "Compress-Archive -Path '${folder.path}' -DestinationPath '${zipPath}' -Force"`,
+        { timeout: 600000 }
+      )
+      if (code === 0) foldersCopied++
     }
     if (foldersCopied > 0) log.push(`Compressed ${foldersCopied} custom folders`)
 
     // 6. קובץ README
+    sendProgress('Finishing up...', 97)
     const readme = `MigrateMyPC Export
 ==================
 Date: ${new Date().toLocaleString()}
-Computer: ${require('os').hostname()}
+Computer: ${os.hostname()}
 
 Contents:
 - manifest.json: Program list and license info
@@ -201,8 +245,9 @@ To restore on new PC:
 2. Open the app and click "Import"
 3. Select this MigrateMyPC_Export folder
 `
-    fs.writeFileSync(path.join(exportPath, 'README.txt'), readme, 'utf8')
+    await fs.promises.writeFile(path.join(exportPath, 'README.txt'), readme, 'utf8')
 
+    sendProgress('Done!', 100)
     return { success: true, exportPath, log }
 
   } catch (err) {
@@ -323,17 +368,13 @@ ipcMain.handle('start-import', async (event, exportPath, options) => {
   const os = require('os')
   const fs = require('fs')
   const path = require('path')
-  const { execSync, spawn } = require('child_process')
+  const { spawn } = require('child_process')
   const log = []
 
-  // robocopy מחזיר קודים 0-7 בהצלחה - execSync זורק שגיאה על כל קוד שאינו 0
-  function robocopyDir(src, dest) {
-    try {
-      execSync(`robocopy "${src}" "${dest}" /E /NFL /NDL /NJH /NJS /nc /ns /np`, { windowsHide: true })
-      return true
-    } catch (e) {
-      return typeof e.status === 'number' && e.status <= 7
-    }
+  // robocopy מחזיר קודים 0-7 בהצלחה - רץ ברקע בלי להקפיא את החלון
+  async function robocopyDir(src, dest) {
+    const code = await runCommand(`robocopy "${src}" "${dest}" /E /NFL /NDL /NJH /NJS /nc /ns /np`)
+    return code <= 7
   }
 
   try {
@@ -404,10 +445,10 @@ ipcMain.handle('start-import', async (event, exportPath, options) => {
             try {
               const stat = fs.statSync(src)
               if (stat.isDirectory()) {
-                if (robocopyDir(src, dest)) restored++
+                if (await robocopyDir(src, dest)) restored++
               } else {
                 if (!fs.existsSync(target.parentDir)) fs.mkdirSync(target.parentDir, { recursive: true })
-                fs.copyFileSync(src, dest)
+                await fs.promises.copyFile(src, dest)
                 restored++
               }
             } catch {}
@@ -431,11 +472,11 @@ ipcMain.handle('start-import', async (event, exportPath, options) => {
           const zipPath = path.join(zipsRoot, zipName)
           try {
             if (!fs.existsSync(destRoot)) fs.mkdirSync(destRoot, { recursive: true })
-            execSync(
+            const code = await runCommand(
               `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${destRoot}' -Force"`,
-              { windowsHide: true, timeout: 600000 }
+              { timeout: 600000 }
             )
-            extracted++
+            if (code === 0) extracted++
           } catch {}
         }
       }
