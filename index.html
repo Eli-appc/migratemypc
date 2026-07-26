@@ -324,6 +324,7 @@
     <button class="tab-btn active" id="tab-btn-programs" onclick="switchTab('programs', this)"></button>
     <button class="tab-btn" id="tab-btn-folders" onclick="switchTab('folders', this)"></button>
     <button class="tab-btn" onclick="switchTab('export', this)">🚀 Export</button>
+    <button class="tab-btn" onclick="switchTab('import', this)">📥 Import</button>
     <button class="tab-btn" onclick="switchTab('more', this)" title="Coming soon">+</button>
     <div class="toolbar-spacer"></div>
     
@@ -404,6 +405,70 @@
       <div class="card" id="export-result" style="display:none">
         <h2 id="export-result-title"></h2>
         <div id="export-result-content"></div>
+      </div>
+
+    </div>
+
+    <div id="tab-import" class="tab-panel">
+
+      <!-- שלב 1: בחירת תיקיית הייצוא מה-USB -->
+      <div class="card">
+        <h2>📥 Import from USB Drive</h2>
+        <p style="color:#aaaacc; margin-bottom:16px">
+          Connect the USB drive from your old computer and select the <strong>MigrateMyPC_Export</strong> folder.
+        </p>
+
+        <div id="import-folder-path" style="background:#1e1e2e; border-radius:8px; padding:12px 16px; margin-bottom:12px; font-size:13px; color:#aaaacc;">
+          No folder selected
+        </div>
+
+        <button class="btn-primary" onclick="selectImportFolder()">📁 Select Export Folder</button>
+      </div>
+
+      <!-- סיכום מה נמצא בייצוא -->
+      <div class="card" id="import-summary" style="display:none">
+        <h2>📋 Found in this export</h2>
+        <div id="import-summary-content"></div>
+      </div>
+
+      <!-- אפשרויות שחזור -->
+      <div class="card" id="import-options" style="display:none">
+        <h2>⚙️ What to restore</h2>
+
+        <label style="display:block; padding:8px 0; font-size:14px; color:#ddddee; cursor:pointer;">
+          <input type="checkbox" id="import-opt-winget" checked>
+          Install programs automatically (winget) — opens a separate window
+        </label>
+
+        <label style="display:block; padding:8px 0; font-size:14px; color:#ddddee; cursor:pointer;">
+          <input type="checkbox" id="import-opt-appdata">
+          Restore app settings &amp; data folders
+        </label>
+
+        <label style="display:block; padding:8px 0; font-size:14px; color:#ddddee; cursor:pointer;">
+          <input type="checkbox" id="import-opt-folders" checked>
+          Extract custom folders to Desktop\MigrateMyPC_Restored
+        </label>
+
+        <div style="background:#2a2a1e; color:#f0c040; padding:10px 12px; border-radius:8px; font-size:12px; margin-top:10px; line-height:1.6;">
+          💡 <strong>Recommended order:</strong> Run once with only "Install programs" checked, wait for the
+          winget window to finish, then run again with only "Restore app settings" checked — so freshly
+          installed programs don't overwrite your restored settings.
+        </div>
+
+        <button class="btn-primary" id="btn-start-import" onclick="startImport()" style="background:#2a6a3a;">▶️ Start Import</button>
+      </div>
+
+      <!-- רשימת התוכנות מהמחשב הישן -->
+      <div class="card" id="import-programs" style="display:none">
+        <h2>📦 Programs from your old PC</h2>
+        <div id="import-programs-content"></div>
+      </div>
+
+      <!-- תוצאה -->
+      <div class="card" id="import-result" style="display:none">
+        <h2 id="import-result-title"></h2>
+        <div id="import-result-content"></div>
       </div>
 
     </div>
@@ -504,38 +569,7 @@
       document.getElementById('folders-add-btn').textContent = window.i18n.t('foldersAddBtn')
       document.getElementById('no-folders').textContent = window.i18n.t('noFolders')
       document.getElementById('coming-soon').textContent = window.i18n.t('comingSoon')
-      document.getElementById('tab-btn-more').title = window.i18n.t('moreTooltip')
-      document.getElementById('lang-toggle').textContent = lang === 'he' ? 'EN' : 'HE'
-
       document.getElementById('panel-title').textContent = window.i18n.t('panelTitle')
-      document.getElementById('panel-label-name').textContent = window.i18n.t('panelLabelName')
-      document.getElementById('panel-label-version').textContent = window.i18n.t('panelLabelVersion')
-      document.getElementById('panel-label-publisher').textContent = window.i18n.t('panelLabelPublisher')
-      document.getElementById('panel-label-license').textContent = window.i18n.t('panelLabelLicense')
-      document.getElementById('opt-none').textContent = window.i18n.t('licenseNone')
-      document.getElementById('opt-serial').textContent = window.i18n.t('licenseSerial')
-      document.getElementById('opt-account').textContent = window.i18n.t('licenseAccount')
-      document.getElementById('opt-subscription').textContent = window.i18n.t('licenseSubscription')
-      document.getElementById('panel-label-serial').textContent = window.i18n.t('panelLabelSerial')
-      document.getElementById('panel-serial').placeholder = window.i18n.t('serialPlaceholder')
-      document.getElementById('panel-label-username').textContent = window.i18n.t('panelLabelUsername')
-      document.getElementById('panel-label-password').textContent = window.i18n.t('panelLabelPassword')
-      document.getElementById('panel-label-installer').textContent = window.i18n.t('panelLabelInstaller')
-      document.getElementById('panel-installer').placeholder = window.i18n.t('installerPlaceholder')
-      document.getElementById('panel-installer-btn').textContent = window.i18n.t('browseFileBtn')
-      document.getElementById('panel-label-notes').textContent = window.i18n.t('panelLabelNotes')
-      document.getElementById('panel-notes').placeholder = window.i18n.t('notesPlaceholder')
-      document.getElementById('panel-save-btn').textContent = window.i18n.t('saveBtn')
-      document.getElementById('panel-close-btn').textContent = window.i18n.t('closeBtn')
-
-      // אם יש תוצאות סריקה - רנדר מחדש בשפה החדשה
-      if (lastPrograms.length > 0) renderTable(lastPrograms)
-      renderFolders()
-    }
-
-    function toggleLang() {
-      const current = window.i18n.getLang()
-      window.i18n.setLang(current === 'he' ? 'en' : 'he')
     }
 
     function switchTab(name, btn) {
@@ -976,6 +1010,168 @@
       }
 
       document.getElementById('btn-start-export').disabled = false
+    }
+    // ═══ IMPORT ═══
+    let importFolderPath = null
+
+    async function selectImportFolder() {
+      const paths = await window.electronAPI.browseFolder()
+      if (!paths || paths.length === 0) return
+
+      const result = await window.electronAPI.loadManifest(paths[0])
+      const pathEl = document.getElementById('import-folder-path')
+
+      if (!result.success) {
+        pathEl.innerHTML = `❌ <span style="color:#ff6b6b">${result.error}</span>`
+        document.getElementById('import-summary').style.display = 'none'
+        document.getElementById('import-options').style.display = 'none'
+        document.getElementById('import-programs').style.display = 'none'
+        return
+      }
+
+      importFolderPath = result.exportPath
+      pathEl.innerHTML = `📁 <strong>${result.exportPath}</strong>`
+      pathEl.style.color = '#7c9ef8'
+
+      showImportSummary(result)
+      renderImportPrograms(result)
+      document.getElementById('import-options').style.display = 'block'
+      document.getElementById('import-result').style.display = 'none'
+    }
+
+    function showImportSummary(r) {
+      const m = r.manifest
+      const exportDate = m.exportDate ? new Date(m.exportDate).toLocaleString() : '-'
+
+      document.getElementById('import-summary').style.display = 'block'
+      document.getElementById('import-summary-content').innerHTML = `
+        <div class="export-item">
+          <span class="item-icon">🖥️</span>
+          <span class="item-name">Exported from</span>
+          <span class="item-status">${m.computerName || '-'} — ${exportDate}</span>
+        </div>
+        <div class="export-item success">
+          <span class="item-icon">📦</span>
+          <span class="item-name">Programs in list</span>
+          <span class="item-status">${(m.programs || []).length}</span>
+        </div>
+        <div class="export-item success">
+          <span class="item-icon">🚀</span>
+          <span class="item-name">Auto-installable via winget</span>
+          <span class="item-status">${r.wingetCount} packages</span>
+        </div>
+        <div class="export-item ${r.installers.length ? 'success' : 'warning'}">
+          <span class="item-icon">💿</span>
+          <span class="item-name">Installer files included</span>
+          <span class="item-status">${r.installers.length}</span>
+        </div>
+        <div class="export-item ${r.appdataPrograms.length ? 'success' : 'warning'}">
+          <span class="item-icon">⚙️</span>
+          <span class="item-name">App settings backed up</span>
+          <span class="item-status">${r.appdataPrograms.length} programs</span>
+        </div>
+        <div class="export-item ${r.customZips.length ? 'success' : 'warning'}">
+          <span class="item-icon">📁</span>
+          <span class="item-name">Custom folders (zip)</span>
+          <span class="item-status">${r.customZips.length}</span>
+        </div>
+      `
+    }
+
+    function renderImportPrograms(r) {
+      const m = r.manifest
+      const programs = m.programs || []
+      const pdata = m.programsData || {}
+
+      let html = `
+        <table class="programs-table">
+          <thead>
+            <tr>
+              <th>Program</th>
+              <th>Version</th>
+              <th>License</th>
+              <th>License Info</th>
+              <th>Hint</th>
+            </tr>
+          </thead>
+          <tbody>
+      `
+
+      for (const p of programs) {
+        const saved = pdata[p.id] || {}
+        const lt = saved.licenseType || p.detectedLicenseType
+
+        let licenseIcon = '❓'
+        if (lt === 'account' || lt === 'subscription') licenseIcon = '🔐'
+        else if (lt === 'serial') licenseIcon = '🔑'
+        else if (lt === 'free' || lt === 'none') licenseIcon = '🆓'
+
+        const info = []
+        if (saved.serial) info.push('🔑 ' + saved.serial)
+        if (saved.username) info.push('👤 ' + saved.username)
+        if (saved.password) info.push('🔒 Password saved (open old export panel to view)')
+        if (saved.notes) info.push('📝 ' + saved.notes)
+
+        html += `<tr>
+          <td>${p.name}</td>
+          <td>${p.version || '-'}</td>
+          <td style="text-align:center; font-size:18px">${licenseIcon}</td>
+          <td style="font-size:12px">${info.join('<br>') || '-'}</td>
+          <td style="font-size:12px; color:#4caf82">${p.detectedHint || ''}</td>
+        </tr>`
+      }
+
+      html += `</tbody></table>`
+      document.getElementById('import-programs-content').innerHTML = html
+      document.getElementById('import-programs').style.display = 'block'
+    }
+
+    async function startImport() {
+      if (!importFolderPath) return
+
+      const options = {
+        runWinget: document.getElementById('import-opt-winget').checked,
+        restoreAppdata: document.getElementById('import-opt-appdata').checked,
+        restoreFolders: document.getElementById('import-opt-folders').checked
+      }
+
+      const btn = document.getElementById('btn-start-import')
+      btn.disabled = true
+      btn.textContent = '⏳ Importing... (this can take a while)'
+
+      const result = await window.electronAPI.startImport(importFolderPath, options)
+
+      btn.disabled = false
+      btn.textContent = '▶️ Start Import'
+
+      const resultEl = document.getElementById('import-result')
+      const titleEl = document.getElementById('import-result-title')
+      const contentEl = document.getElementById('import-result-content')
+      resultEl.style.display = 'block'
+
+      if (result.success) {
+        titleEl.textContent = '✅ Import finished'
+        titleEl.style.color = '#4caf82'
+        contentEl.innerHTML = `
+          <div style="background:#1a2a1e; border-radius:8px; padding:12px; font-size:13px; color:#4caf82;">
+            ${result.log.map(l => '✓ ' + l).join('<br>')}
+          </div>
+          <p style="color:#aaaacc; font-size:12px; margin-top:12px">
+            Programs not available in winget need manual installation — their installers are in the folder below.
+          </p>
+          <button class="btn-primary" style="margin-top:4px" onclick="openInstallersFolder()">📂 Open installers folder</button>
+        `
+      } else {
+        titleEl.textContent = '❌ Import failed'
+        titleEl.style.color = '#ff6b6b'
+        contentEl.innerHTML = `<p style="color:#ff6b6b">${result.error}</p>`
+      }
+    }
+
+    async function openInstallersFolder() {
+      if (importFolderPath) {
+        await window.electronAPI.openPath(importFolderPath + '\\installers')
+      }
     }
     // אתחול ראשוני
     renderAll()

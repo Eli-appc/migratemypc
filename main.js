@@ -262,6 +262,195 @@ ipcMain.handle('browse-file', async (event, lang) => {
   return result.filePaths[0]
 })
 
+// ═══ IMPORT (on the new PC) ═══
+
+// קריאת manifest.json מתיקיית הייצוא ובדיקה מה יש בפנים
+ipcMain.handle('load-manifest', async (event, folderPath) => {
+  const fs = require('fs')
+  const path = require('path')
+
+  try {
+    // המשתמש יכול לבחור את MigrateMyPC_Export עצמה, או את התיקייה שמכילה אותה
+    let exportPath = folderPath
+    if (!fs.existsSync(path.join(exportPath, 'manifest.json'))) {
+      const candidate = path.join(exportPath, 'MigrateMyPC_Export')
+      if (fs.existsSync(path.join(candidate, 'manifest.json'))) {
+        exportPath = candidate
+      } else {
+        return { success: false, error: 'manifest.json not found in this folder. Please select the MigrateMyPC_Export folder.' }
+      }
+    }
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(exportPath, 'manifest.json'), 'utf8'))
+
+    // ספירת חבילות winget
+    let wingetCount = 0
+    const wingetFile = path.join(exportPath, 'winget-packages.json')
+    if (fs.existsSync(wingetFile)) {
+      try {
+        const wj = JSON.parse(fs.readFileSync(wingetFile, 'utf8'))
+        for (const source of (wj.Sources || [])) {
+          wingetCount += (source.Packages || []).length
+        }
+      } catch {}
+    }
+
+    // מה עוד קיים בייצוא
+    const installersDir = path.join(exportPath, 'installers')
+    const appdataDir = path.join(exportPath, 'appdata')
+    const zipsDir = path.join(exportPath, 'custom_folders')
+
+    const installers = fs.existsSync(installersDir) ? fs.readdirSync(installersDir) : []
+    const appdataPrograms = fs.existsSync(appdataDir) ? fs.readdirSync(appdataDir) : []
+    const customZips = fs.existsSync(zipsDir)
+      ? fs.readdirSync(zipsDir).filter(f => f.toLowerCase().endsWith('.zip'))
+      : []
+
+    return { success: true, exportPath, manifest, wingetCount, installers, appdataPrograms, customZips }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// פתיחת תיקייה בסייר הקבצים של Windows
+ipcMain.handle('open-path', async (event, p) => {
+  const { shell } = require('electron')
+  return shell.openPath(p)
+})
+
+// תהליך הייבוא המלא
+ipcMain.handle('start-import', async (event, exportPath, options) => {
+  const os = require('os')
+  const fs = require('fs')
+  const path = require('path')
+  const { execSync, spawn } = require('child_process')
+  const log = []
+
+  // robocopy מחזיר קודים 0-7 בהצלחה - execSync זורק שגיאה על כל קוד שאינו 0
+  function robocopyDir(src, dest) {
+    try {
+      execSync(`robocopy "${src}" "${dest}" /E /NFL /NDL /NJH /NJS /nc /ns /np`, { windowsHide: true })
+      return true
+    } catch (e) {
+      return typeof e.status === 'number' && e.status <= 7
+    }
+  }
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(exportPath, 'manifest.json'), 'utf8'))
+
+    // 1. התקנת תוכנות דרך winget - נפתח בחלון PowerShell נפרד וגלוי
+    //    כדי שהמשתמש יראה את ההתקדמות והאפליקציה לא תיתקע
+    if (options.runWinget) {
+      const wingetFile = path.join(exportPath, 'winget-packages.json')
+      if (fs.existsSync(wingetFile)) {
+        const script = [
+          'Write-Host "MigrateMyPC - installing programs via winget..." -ForegroundColor Cyan',
+          'Write-Host "This can take a long time. Do not close this window until it says Done." -ForegroundColor Yellow',
+          'Write-Host ""',
+          `winget import -i "${wingetFile}" --ignore-unavailable --accept-package-agreements --accept-source-agreements`,
+          'Write-Host ""',
+          'Write-Host "Done! You can close this window." -ForegroundColor Green'
+        ].join('\r\n')
+        const scriptPath = path.join(os.tmpdir(), 'migratemypc_winget_import.ps1')
+        fs.writeFileSync(scriptPath, '\ufeff' + script, 'utf8')
+        const child = spawn(
+          'powershell.exe',
+          ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit', '-File', scriptPath],
+          { detached: true, stdio: 'ignore', windowsHide: false }
+        )
+        child.unref()
+        log.push('winget installation started in a separate window - watch it for progress')
+      } else {
+        log.push('winget-packages.json not found - auto-install skipped')
+      }
+    }
+
+    // 2. שחזור תיקיות הגדרות (appdata) למיקומים המקוריים
+    if (options.restoreAppdata) {
+      const appdataRoot = path.join(exportPath, 'appdata')
+      let restored = 0
+
+      if (fs.existsSync(appdataRoot)) {
+        for (const program of (manifest.programs || [])) {
+          if (!program.detectedDataFolders || program.detectedDataFolders.length === 0) continue
+
+          const safeName = program.name.replace(/[<>:"/\\|?*]/g, '_')
+          const srcRoot = path.join(appdataRoot, safeName)
+          if (!fs.existsSync(srcRoot)) continue
+
+          // בניית יעדי שחזור מהגדרות התיקיות המקוריות (עם הרחבת %APPDATA% וכו' במחשב החדש)
+          const targets = program.detectedDataFolders.map(folder => {
+            const expanded = folder
+              .replace(/%APPDATA%/gi, process.env.APPDATA)
+              .replace(/%LOCALAPPDATA%/gi, process.env.LOCALAPPDATA)
+              .replace(/%USERPROFILE%/gi, process.env.USERPROFILE)
+              .replace(/%PROGRAMDATA%/gi, process.env.PROGRAMDATA)
+            return {
+              parentDir: path.dirname(expanded),
+              base: path.basename(expanded),
+              hasWildcard: expanded.includes('*')
+            }
+          })
+
+          for (const item of fs.readdirSync(srcRoot)) {
+            const target = targets.find(t =>
+              t.hasWildcard ? item.startsWith(t.base.replace('*', '')) : item === t.base
+            )
+            if (!target) continue
+
+            const src = path.join(srcRoot, item)
+            const dest = path.join(target.parentDir, item)
+            try {
+              const stat = fs.statSync(src)
+              if (stat.isDirectory()) {
+                if (robocopyDir(src, dest)) restored++
+              } else {
+                if (!fs.existsSync(target.parentDir)) fs.mkdirSync(target.parentDir, { recursive: true })
+                fs.copyFileSync(src, dest)
+                restored++
+              }
+            } catch {}
+          }
+        }
+      }
+
+      log.push(restored > 0
+        ? `Restored app settings for ${restored} locations`
+        : 'No app settings were restored (nothing matched)')
+    }
+
+    // 3. חילוץ התיקיות המותאמות אישית לשולחן העבודה (בטוח יותר מדריסת תיקיות קיימות)
+    if (options.restoreFolders) {
+      const zipsRoot = path.join(exportPath, 'custom_folders')
+      let extracted = 0
+      const destRoot = path.join(os.homedir(), 'Desktop', 'MigrateMyPC_Restored')
+
+      if (fs.existsSync(zipsRoot)) {
+        for (const zipName of fs.readdirSync(zipsRoot).filter(f => f.toLowerCase().endsWith('.zip'))) {
+          const zipPath = path.join(zipsRoot, zipName)
+          try {
+            if (!fs.existsSync(destRoot)) fs.mkdirSync(destRoot, { recursive: true })
+            execSync(
+              `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${destRoot}' -Force"`,
+              { windowsHide: true, timeout: 600000 }
+            )
+            extracted++
+          } catch {}
+        }
+      }
+
+      log.push(extracted > 0
+        ? `Extracted ${extracted} custom folders to ${destRoot}`
+        : 'No custom folders found to extract')
+    }
+
+    return { success: true, log }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
 app.whenReady().then(() => {
   createWindow()
 })
